@@ -665,7 +665,7 @@ print(response.content)
                 onChange={(e) => setSystemPrompt(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="You are a helpful AI..."
-                className="w-full min-h-[16rem] bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/5 rounded-xl p-4 text-sm font-mono text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-colors shadow-sm resize-y placeholder:text-gray-400 dark:placeholder:text-gray-600"
+                className="w-full min-h-[16rem] bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/5 rounded-xl px-4 py-4 pb-8 text-sm font-mono text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-colors shadow-sm resize-y placeholder:text-gray-400 dark:placeholder:text-gray-600"
               />
             </div>
           </div>
@@ -686,7 +686,7 @@ print(response.content)
                 onChange={(e) => setUserPrompt(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="What is the meaning of {life}?"
-                className="w-full min-h-[8rem] bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/5 rounded-xl p-4 text-sm font-mono text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-colors shadow-sm resize-y placeholder:text-gray-400 dark:placeholder:text-gray-600"
+                className="w-full min-h-[8rem] bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/5 rounded-xl px-4 py-4 pb-8 text-sm font-mono text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-colors shadow-sm resize-y placeholder:text-gray-400 dark:placeholder:text-gray-600"
               />
             </div>
           </div>
