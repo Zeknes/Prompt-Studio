@@ -284,12 +284,14 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
     return (
         <div className="relative group/pre my-4">
              {isJson && (
-                 <button 
-                    onClick={() => setWrapped(!wrapped)}
-                    className="absolute right-2 top-2 z-20 px-2 py-1 text-[10px] bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded opacity-0 group-hover/pre:opacity-100 transition-opacity font-sans font-medium border border-gray-300 dark:border-gray-600"
-                 >
-                    {wrapped ? 'Scroll' : 'Wrap'}
-                 </button>
+                 <div className="absolute right-2 top-2 z-20 flex gap-2 opacity-0 group-hover/pre:opacity-100 transition-opacity">
+                     <button 
+                        onClick={() => setWrapped(!wrapped)}
+                        className="px-2 py-1 text-[10px] bg-gray-100 dark:bg-[#2c2c2e] hover:bg-gray-200 dark:hover:bg-[#3a3a3c] text-gray-600 dark:text-gray-300 rounded-md font-sans font-medium border border-gray-200 dark:border-white/10 transition-colors shadow-sm"
+                     >
+                        {wrapped ? 'Scroll' : 'Wrap'}
+                     </button>
+                 </div>
              )}
              <pre 
                 {...props} 
