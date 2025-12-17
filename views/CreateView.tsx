@@ -302,10 +302,10 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
         <div className="relative group/pre my-4 rounded-lg overflow-hidden border border-gray-200 dark:border-white/10 bg-gray-50/50 dark:bg-[#1c1c1e]">
              {/* Sticky Toolbar */}
              <div className="sticky top-0 right-0 z-20 flex justify-end w-full h-0 overflow-visible pointer-events-none">
-                 <div className="flex flex-col gap-1.5 p-2 opacity-0 group-hover/pre:opacity-100 transition-opacity duration-200 pointer-events-auto">
+                 <div className="flex flex-col gap-1.5 p-2 opacity-0 group-hover/pre:opacity-100 transition-opacity duration-200 pointer-events-auto items-end">
                      <button 
                         onClick={handleCopy}
-                        className="p-1.5 bg-white dark:bg-[#2c2c2e] hover:bg-gray-100 dark:hover:bg-[#3a3a3c] text-gray-500 dark:text-gray-400 rounded-md border border-gray-200 dark:border-white/10 shadow-sm transition-all"
+                        className="p-1.5 bg-white dark:bg-[#2c2c2e] hover:bg-gray-100 dark:hover:bg-[#3a3a3c] text-gray-500 dark:text-gray-400 rounded-md border border-gray-200 dark:border-white/10 shadow-sm transition-all flex items-center justify-center w-7 h-7"
                         title="Copy code"
                      >
                         {copied ? <Icons.Check /> : <Icons.Copy />}
@@ -314,7 +314,7 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
                      {isJson && (
                         <button 
                             onClick={() => setWrapped(!wrapped)}
-                            className="px-2 py-1 text-[10px] bg-white dark:bg-[#2c2c2e] hover:bg-gray-100 dark:hover:bg-[#3a3a3c] text-gray-600 dark:text-gray-300 rounded-md font-sans font-medium border border-gray-200 dark:border-white/10 transition-colors shadow-sm whitespace-nowrap"
+                            className="px-2 py-1 h-7 text-[10px] bg-white dark:bg-[#2c2c2e] hover:bg-gray-100 dark:hover:bg-[#3a3a3c] text-gray-600 dark:text-gray-300 rounded-md font-sans font-medium border border-gray-200 dark:border-white/10 transition-colors shadow-sm whitespace-nowrap flex items-center justify-center"
                         >
                             {wrapped ? 'Scroll' : 'Wrap'}
                         </button>
@@ -548,6 +548,15 @@ print(response.content)
     }
   }, [includeCredentials, showExportModal]);
 
+  const handleCopyFullPrompt = () => {
+    const finalSystem = TokenService.resolveVariables(systemPrompt, variables);
+    const finalUser = TokenService.resolveVariables(userPrompt, variables);
+    const fullPrompt = `${finalSystem}\n\n---\n\n${finalUser}`;
+    
+    navigator.clipboard.writeText(fullPrompt);
+    showToast("Full prompt copied to clipboard", "success");
+  };
+
   return (
     <div className="flex h-full relative">
       <ConfirmModal
@@ -581,6 +590,14 @@ print(response.content)
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden transition-colors duration-200">
         <header className="flex-shrink-0 min-h-16 border-b border-gray-200 dark:border-white/5 flex flex-wrap gap-4 justify-between items-center px-6 py-3 bg-white/80 dark:bg-[#0a0a0a]/50 backdrop-blur-sm sticky top-0 z-10 transition-colors duration-200">
           
+          <button 
+            onClick={handleCopyFullPrompt}
+            className="p-2 bg-gray-100 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-white/10 text-gray-600 dark:text-gray-300 rounded-lg transition-colors mr-2 flex-shrink-0"
+            title="Copy Full Prompt"
+          >
+            <Icons.Copy />
+          </button>
+
           {/* Config Selection */}
           <div className="flex items-center gap-3 max-w-full">
              <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-white/5 rounded-lg border border-transparent hover:border-gray-300 dark:hover:border-white/10 transition-all group relative w-64">
