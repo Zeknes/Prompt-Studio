@@ -218,7 +218,7 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
 
   // Parse Variables
   const detectedVariables = useMemo(() => {
-    const regex = /\{([^}]+)\}/g;
+    const regex = /\{([^"':{}\[\]\n,\\]+)\}/g;
     const combined = systemPrompt + userPrompt;
     const found = new Set<string>();
     let match;
