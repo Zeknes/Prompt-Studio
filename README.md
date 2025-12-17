@@ -1,7 +1,11 @@
 # Prompt Studio 🚀
 
+### [🔗 Live Demo / 在线体验](https://Zeknes.github.io/Prompt-Studio/)
+
 **The Ultimate LLM Prompt Engineering & Debugging Tool.**  
 **终极 LLM 提示词工程与调试工具。**
+
+![Prompt Studio Interface](./images/screenshot-create.jpeg)
 
 Prompt Studio is a powerful, local-first integrated development environment (IDE) designed for Prompt Engineers and Developers. It streamlines the process of crafting, testing, and managing prompts for Large Language Models (LLMs), ensuring your data remains private and secure.
 
