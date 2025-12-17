@@ -1,0 +1,5 @@
+{
+  "name": "Prompt Studio",
+  "description": "A professional prompt engineering environment. Debug, manage, and test prompts with variable support. Compatible with OpenAI-style APIs (OpenAI, DeepSeek, Local LLMs).",
+  "requestFramePermissions": []
+}
