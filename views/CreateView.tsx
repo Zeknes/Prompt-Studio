@@ -270,32 +270,61 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
 
   // Custom Pre component for Code Blocks
   const PreBlock = ({ children, ...props }: any) => {
-    // Check if children is a code element with language-json
+    const [wrapped, setWrapped] = useState(false);
+    const [copied, setCopied] = useState(false);
+
+    // Extract code content
+    let codeContent = '';
     let isJson = false;
+    
     if (React.isValidElement(children)) {
-        const className = (children.props as any).className || '';
+        const childProps = (children.props as any);
+        const className = childProps.className || '';
         if (className.includes('language-json')) {
             isJson = true;
         }
+        if (Array.isArray(childProps.children)) {
+            codeContent = childProps.children.join('');
+        } else {
+            codeContent = childProps.children?.toString() || '';
+        }
+    } else if (typeof children === 'string') {
+        codeContent = children;
     }
-    
-    const [wrapped, setWrapped] = useState(false);
+
+    const handleCopy = () => {
+        navigator.clipboard.writeText(codeContent);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
     
     return (
-        <div className="relative group/pre my-4">
-             {isJson && (
-                 <div className="absolute right-2 top-2 z-20 flex gap-2 opacity-0 group-hover/pre:opacity-100 transition-opacity">
+        <div className="relative group/pre my-4 rounded-lg overflow-hidden border border-gray-200 dark:border-white/10 bg-gray-50/50 dark:bg-[#1c1c1e]">
+             {/* Sticky Toolbar */}
+             <div className="sticky top-0 right-0 z-20 flex justify-end w-full h-0 overflow-visible pointer-events-none">
+                 <div className="flex flex-col gap-1.5 p-2 opacity-0 group-hover/pre:opacity-100 transition-opacity duration-200 pointer-events-auto">
                      <button 
-                        onClick={() => setWrapped(!wrapped)}
-                        className="px-2 py-1 text-[10px] bg-gray-100 dark:bg-[#2c2c2e] hover:bg-gray-200 dark:hover:bg-[#3a3a3c] text-gray-600 dark:text-gray-300 rounded-md font-sans font-medium border border-gray-200 dark:border-white/10 transition-colors shadow-sm"
+                        onClick={handleCopy}
+                        className="p-1.5 bg-white dark:bg-[#2c2c2e] hover:bg-gray-100 dark:hover:bg-[#3a3a3c] text-gray-500 dark:text-gray-400 rounded-md border border-gray-200 dark:border-white/10 shadow-sm transition-all"
+                        title="Copy code"
                      >
-                        {wrapped ? 'Scroll' : 'Wrap'}
+                        {copied ? <Icons.Check /> : <Icons.Copy />}
                      </button>
+                     
+                     {isJson && (
+                        <button 
+                            onClick={() => setWrapped(!wrapped)}
+                            className="px-2 py-1 text-[10px] bg-white dark:bg-[#2c2c2e] hover:bg-gray-100 dark:hover:bg-[#3a3a3c] text-gray-600 dark:text-gray-300 rounded-md font-sans font-medium border border-gray-200 dark:border-white/10 transition-colors shadow-sm whitespace-nowrap"
+                        >
+                            {wrapped ? 'Scroll' : 'Wrap'}
+                        </button>
+                     )}
                  </div>
-             )}
+             </div>
+
              <pre 
                 {...props} 
-                className={`${props.className || ''} ${wrapped ? '!whitespace-pre-wrap !break-all' : '!overflow-x-auto'} relative`}
+                className={`${props.className || ''} ${wrapped ? '!whitespace-pre-wrap !break-all' : '!overflow-x-auto'} relative p-4 !bg-transparent !m-0 !border-0`}
              >
                 {children}
              </pre>
