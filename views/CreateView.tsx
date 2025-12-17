@@ -246,24 +246,60 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
   const parsedOutput = useMemo(() => {
     if (!output) return { thought: null, content: '' };
     
-    const thinkStart = output.indexOf('<think>');
-    if (thinkStart === -1) return { thought: null, content: output };
+    // Strict check: Must start with <think> tag to be considered a thinking model
+    if (!output.trimStart().startsWith('<think>')) {
+       return { thought: null, content: output };
+    }
     
+    const thinkStart = 0;
     const thinkEnd = output.indexOf('</think>');
     
     if (thinkEnd === -1) {
       // Thinking is ongoing or incomplete
       // Assume everything after <think> is thought
-      const thought = output.slice(thinkStart + 7).trim(); // 7 is len of <think>
+      const thought = output.slice(7).trim(); // 7 is len of <think>
       return { thought, content: '' };
     }
     
     // Thinking block is closed
-    const thought = output.slice(thinkStart + 7, thinkEnd).trim();
-    const content = output.slice(thinkEnd + 8).trim(); // 8 is len of </think>
+    const thought = output.slice(7, thinkEnd).trim();
+    const content = output.slice(thinkEnd + 8).trim();
     
     return { thought, content };
   }, [output]);
+
+  // Custom Pre component for Code Blocks
+  const PreBlock = ({ children, ...props }: any) => {
+    // Check if children is a code element with language-json
+    let isJson = false;
+    if (React.isValidElement(children)) {
+        const className = (children.props as any).className || '';
+        if (className.includes('language-json')) {
+            isJson = true;
+        }
+    }
+    
+    const [wrapped, setWrapped] = useState(false);
+    
+    return (
+        <div className="relative group/pre my-4">
+             {isJson && (
+                 <button 
+                    onClick={() => setWrapped(!wrapped)}
+                    className="absolute right-2 top-2 z-20 px-2 py-1 text-[10px] bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded opacity-0 group-hover/pre:opacity-100 transition-opacity font-sans font-medium border border-gray-300 dark:border-gray-600"
+                 >
+                    {wrapped ? 'Scroll' : 'Wrap'}
+                 </button>
+             )}
+             <pre 
+                {...props} 
+                className={`${props.className || ''} ${wrapped ? '!whitespace-pre-wrap !break-all' : '!overflow-x-auto'} relative`}
+             >
+                {children}
+             </pre>
+        </div>
+    );
+  };
 
   const handleRun = async () => {
     if (!systemPrompt.trim() && !userPrompt.trim()) {
@@ -516,7 +552,7 @@ print(response.content)
           
           {/* Config Selection */}
           <div className="flex items-center gap-3 max-w-full">
-             <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-white/5 rounded-lg border border-transparent hover:border-gray-300 dark:hover:border-white/10 transition-all group relative max-w-[140px] xs:max-w-[200px] sm:max-w-xs">
+             <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-white/5 rounded-lg border border-transparent hover:border-gray-300 dark:hover:border-white/10 transition-all group relative w-64">
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isLoading ? 'bg-yellow-400 animate-pulse' : 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]'}`}></span>
                 <select 
                   value={selectedModelKey} 
@@ -725,7 +761,12 @@ print(response.content)
                             
                             {/* Final Answer */}
                             <div className="font-sans text-sm text-gray-800 dark:text-gray-200 leading-7">
-                               <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                               <ReactMarkdown 
+                                 remarkPlugins={[remarkGfm]}
+                                 components={{
+                                   pre: PreBlock
+                                 }}
+                               >
                                  {parsedOutput.content || '...'}
                                </ReactMarkdown>
                             </div>
