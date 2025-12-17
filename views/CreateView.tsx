@@ -590,14 +590,6 @@ print(response.content)
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden transition-colors duration-200">
         <header className="flex-shrink-0 min-h-16 border-b border-gray-200 dark:border-white/5 flex flex-wrap gap-4 justify-between items-center px-6 py-3 bg-white/80 dark:bg-[#0a0a0a]/50 backdrop-blur-sm sticky top-0 z-10 transition-colors duration-200">
           
-          <button 
-            onClick={handleCopyFullPrompt}
-            className="p-2 bg-gray-100 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-white/10 text-gray-600 dark:text-gray-300 rounded-lg transition-colors mr-2 flex-shrink-0"
-            title="Copy Full Prompt"
-          >
-            <Icons.Copy />
-          </button>
-
           {/* Config Selection */}
           <div className="flex items-center gap-3 max-w-full">
              <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-white/5 rounded-lg border border-transparent hover:border-gray-300 dark:hover:border-white/10 transition-all group relative w-64">
@@ -700,28 +692,39 @@ print(response.content)
           </div>
 
           {/* Action */}
-          <div className="flex justify-end pb-8 md:pb-0 items-center gap-4">
-             <span className="text-xs text-gray-400 dark:text-gray-500 hidden sm:inline-block">
-               Press Ctrl + Enter to run
-             </span>
+          <div className="flex justify-between pb-8 md:pb-0 items-center gap-4">
              <button
-              onClick={handleRun}
-              disabled={isLoading}
-              className={`px-8 py-3 rounded-xl font-semibold text-sm transition-all shadow-lg active:scale-95 flex items-center gap-2 ${
-                isLoading 
-                ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed' 
-                : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/20'
-              }`}
+               onClick={handleCopyFullPrompt}
+               className="flex items-center gap-2 text-xs font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white transition-colors"
+               title="Copy System + User Prompt"
              >
-               {isLoading ? (
-                 <span className="flex items-center gap-2">
-                   <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                   Generating...
-                 </span>
-               ) : (
-                 <><Icons.Play /> Run Prompt</>
-               )}
+               <Icons.Copy />
+               <span className="hidden sm:inline">Copy Full Prompt</span>
              </button>
+
+             <div className="flex items-center gap-4">
+               <span className="text-xs text-gray-400 dark:text-gray-500 hidden sm:inline-block">
+                 Press Ctrl + Enter to run
+               </span>
+               <button
+                onClick={handleRun}
+                disabled={isLoading}
+                className={`px-8 py-3 rounded-xl font-semibold text-sm transition-all shadow-lg active:scale-95 flex items-center gap-2 ${
+                  isLoading 
+                  ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed' 
+                  : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/20'
+                }`}
+               >
+                 {isLoading ? (
+                   <span className="flex items-center gap-2">
+                     <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                     Generating...
+                   </span>
+                 ) : (
+                   <><Icons.Play /> Run Prompt</>
+                 )}
+               </button>
+             </div>
           </div>
 
           {/* Output Area */}
