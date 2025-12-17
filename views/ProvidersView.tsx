@@ -338,7 +338,11 @@ const ProvidersView: React.FC = () => {
                         type="text" 
                         value={newModelName}
                         onChange={e => setNewModelName(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && addModel(newModelName)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                            addModel(newModelName);
+                          }
+                        }}
                         className="flex-1 bg-gray-50 dark:bg-[#2c2c2e] border border-transparent focus:border-blue-500/50 rounded-xl px-4 py-2 text-sm text-gray-900 dark:text-white focus:outline-none"
                         placeholder="Add model ID manually..."
                       />
