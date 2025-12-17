@@ -109,4 +109,4 @@ We welcome contributions! Please feel free to submit a Pull Request.
 
 ## 📄 License (许可证)
 
-MIT License © 2024 Prompt Studio
+MIT License © 2025 Prompt Studio
