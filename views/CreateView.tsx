@@ -270,7 +270,7 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
 
   // Custom Pre component for Code Blocks
   const PreBlock = ({ children, ...props }: any) => {
-    const [wrapped, setWrapped] = useState(false);
+    const [wrapped, setWrapped] = useState(true);
     const [copied, setCopied] = useState(false);
 
     // Extract code content
@@ -489,7 +489,7 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
     const [providerId, modelName] = selectedModelKey.split(':');
     const config = configs.find(c => c.id === providerId);
     
-    const varsString = detectedVariables.map(v => `    "${v}": "${variables[v] || ''}"`).join(',\n');
+    const varsString = detectedVariables.map(v => `    "${v}": """${variables[v] || ''}"""`).join(',\n');
     
     const code = `
 import os
