@@ -489,12 +489,21 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
     const [providerId, modelName] = selectedModelKey.split(':');
     const config = configs.find(c => c.id === providerId);
     
-    const varsDefinition = detectedVariables.map(v => `${v} = """${variables[v] || ''}"""`).join('\n');
+    // Helper to extract used variables from text
+    const extractVars = (text: string) => {
+        const matches = text.match(/\{([a-zA-Z0-9_]+)\}/g) || [];
+        return Array.from(new Set(matches.map(m => m.slice(1, -1))));
+    };
+
+    const systemVars = extractVars(systemPrompt);
+    const userVars = extractVars(userPrompt);
+    const allUsedVars = Array.from(new Set([...systemVars, ...userVars]));
+    
+    const varsDefinition = allUsedVars.map(v => `${v} = """${variables[v] || ''}"""`).join('\n');
     
     const code = `
 import os
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
 
 # Configuration
 ${includeCredentials && config ? `api_key = "${config.apiKey}"` : `api_key = os.environ.get("OPENAI_API_KEY", "YOUR_API_KEY")`}
@@ -511,20 +520,27 @@ llm = ChatOpenAI(
 # Define Variables
 ${varsDefinition}
 
-# Define Prompt
-system_prompt = """${systemPrompt.replace(/"/g, '\\"')}"""
-user_prompt = """${userPrompt.replace(/"/g, '\\"')}"""
+# Define Templates
+system_template = """${systemPrompt.replace(/"/g, '\\"')}"""
+user_template = """${userPrompt.replace(/"/g, '\\"')}"""
 
-# Construct Final Prompt
-# Note: This is a simple concatenation. For more complex logic, consider using ChatPromptTemplate.
-final_prompt = [
-    ("system", system_prompt.format(${detectedVariables.map(v => `${v}=${v}`).join(', ')})),
-    ("user", user_prompt.format(${detectedVariables.map(v => `${v}=${v}`).join(', ')}))
-]
+# Construct Full Prompts
+system_message = system_template${systemVars.length > 0 ? `.format(${systemVars.map(v => `${v}=${v}`).join(', ')})` : ''}
+user_message = user_template${userVars.length > 0 ? `.format(${userVars.map(v => `${v}=${v}`).join(', ')})` : ''}
+
+print("--- System Message ---")
+print(system_message)
+print("\\n--- User Message ---")
+print(user_message)
+print("\\n--- Response ---")
 
 # Execute
-response = llm.invoke(final_prompt)
+messages = [
+    ("system", system_message),
+    ("user", user_message)
+]
 
+response = llm.invoke(messages)
 print(response.content)
 `.trim();
 
