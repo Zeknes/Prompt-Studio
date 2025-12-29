@@ -489,7 +489,7 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
     const [providerId, modelName] = selectedModelKey.split(':');
     const config = configs.find(c => c.id === providerId);
     
-    const varsString = detectedVariables.map(v => `    "${v}": """${variables[v] || ''}"""`).join(',\n');
+    const varsDefinition = detectedVariables.map(v => `${v} = """${variables[v] || ''}"""`).join('\n');
     
     const code = `
 import os
@@ -508,19 +508,22 @@ llm = ChatOpenAI(
     base_url=base_url
 )
 
-# Define Prompt Template
-prompt = ChatPromptTemplate.from_messages([
-    ("system", """${systemPrompt.replace(/"/g, '\\"')}"""),
-    ("user", """${userPrompt.replace(/"/g, '\\"')}""")
-])
+# Define Variables
+${varsDefinition}
 
-# Create Chain
-chain = prompt | llm
+# Define Prompt
+system_prompt = """${systemPrompt.replace(/"/g, '\\"')}"""
+user_prompt = """${userPrompt.replace(/"/g, '\\"')}"""
+
+# Construct Final Prompt
+# Note: This is a simple concatenation. For more complex logic, consider using ChatPromptTemplate.
+final_prompt = [
+    ("system", system_prompt.format(${detectedVariables.map(v => `${v}=${v}`).join(', ')})),
+    ("user", user_prompt.format(${detectedVariables.map(v => `${v}=${v}`).join(', ')}))
+]
 
 # Execute
-response = chain.invoke({
-${varsString}
-})
+response = llm.invoke(final_prompt)
 
 print(response.content)
 `.trim();
