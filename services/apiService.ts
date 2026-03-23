@@ -1,4 +1,4 @@
-import { ApiConfig, CompletionResponse, ChatMessage, StreamChunk } from '../types';
+import { ApiConfig, CompletionResponse, ChatMessage, MessageContent, StreamChunk } from '../types';
 
 export const ApiService = {
   generate: async (
@@ -183,7 +183,7 @@ export const ApiService = {
       // Try with the first model in the list
       const modelToTest = config.models[0];
       const result = await ApiService.generate(config, modelToTest, [
-        { role: 'user', content: 'Hi' }
+        { role: 'user', content: 'Hi' as MessageContent }
       ]);
       
       if (result.error) {

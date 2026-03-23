@@ -11,6 +11,7 @@ export interface SavedPrompt {
   systemPrompt: string;
   userPrompt: string;
   variables: Record<string, string>;
+  images?: ImageAttachment[];
   createdAt: number;
   updatedAt: number;
 }
@@ -24,11 +25,6 @@ export interface ApiConfig {
 }
 
 export type View = 'debug' | 'manage' | 'providers' | 'settings';
-
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-}
 
 export interface CompletionResponse {
   content: string;
@@ -52,4 +48,26 @@ export interface StreamChunk {
 
 export interface AppSettings {
   defaultModels?: string[];
+}
+
+export interface ImageAttachment {
+  id: string;
+  base64: string;
+  mimeType: string;
+  originalSize: number;
+  compressedSize: number;
+  width: number;
+  height: number;
+}
+
+export type MessageContent =
+  | string
+  | Array<
+      | { type: 'text'; text: string }
+      | { type: 'image_url'; image_url: { url: string } }
+    >;
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: MessageContent;
 }

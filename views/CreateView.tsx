@@ -1,12 +1,31 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import hljs from 'highlight.js';
+import 'highlight.js/styles/github-dark.css';
 import { StorageService } from '../services/storageService';
 import { ApiService } from '../services/apiService';
 import { TokenService } from '../services/tokenService';
-import { SavedPrompt, ApiConfig, AppSettings } from '../types';
+import { SavedPrompt, ApiConfig, AppSettings, ImageAttachment } from '../types';
 import { Icons } from '../constants';
 import { useToast, ConfirmModal } from '../components/Feedback';
+import { AttachmentPicker } from '../components/AttachmentPicker';
+import { JsonBlock } from '../components/JsonBlock';
+import { buildMessageContent } from '../utils/imageUtils';
+import { tryParseJson, extractJsonBlocks } from '../utils/jsonUtils';
+
+// Draft storage key
+const DRAFT_KEY = 'ps_draft';
+
+interface DraftData {
+  systemPrompt: string;
+  userPrompt: string;
+  variables: Record<string, string>;
+  saveTitle: string;
+  saveDesc: string;
+  currentId: string | null;
+  timestamp: number;
+}
 
 interface DebugViewProps {
   initialPrompt?: SavedPrompt | null;
@@ -68,12 +87,75 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
 
   // Output Ref for auto-scroll
   const outputEndRef = useRef<HTMLDivElement>(null);
+  const outputStartRef = useRef<HTMLDivElement>(null);
+  const mainContentRef = useRef<HTMLDivElement>(null);
+
+  // Image Attachments
+  const [images, setImages] = useState<ImageAttachment[]>([]);
+
+  // Listen for toast events from AttachmentPicker
+  useEffect(() => {
+    const handleToast = (e: Event) => {
+      const custom = e as CustomEvent<{ message: string; type: 'success' | 'error' }>;
+      showToast(custom.detail.message, custom.detail.type);
+    };
+    window.addEventListener('image-upload-toast', handleToast);
+    return () => window.removeEventListener('image-upload-toast', handleToast);
+  }, [showToast]);
 
   // Enable transitions after mount
   useEffect(() => {
     const timer = setTimeout(() => setIsTransitionEnabled(true), 100);
     return () => clearTimeout(timer);
   }, []);
+
+  // Load draft on mount (only if no initialPrompt provided)
+  useEffect(() => {
+    if (initialPrompt) return; // Don't load draft if editing a saved prompt
+    
+    try {
+      const draftJson = localStorage.getItem(DRAFT_KEY);
+      if (draftJson) {
+        const draft: DraftData = JSON.parse(draftJson);
+        // Only restore if draft is less than 7 days old
+        const oneWeek = 7 * 24 * 60 * 60 * 1000;
+        if (Date.now() - draft.timestamp < oneWeek) {
+          setSystemPrompt(draft.systemPrompt || '');
+          setUserPrompt(draft.userPrompt || '');
+          setVariables(draft.variables || {});
+          setSaveTitle(draft.saveTitle || '');
+          setSaveDesc(draft.saveDesc || '');
+          setCurrentId(draft.currentId || null);
+        } else {
+          // Clear expired draft
+          localStorage.removeItem(DRAFT_KEY);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load draft', e);
+    }
+  }, [initialPrompt]);
+
+  // Auto-save draft with debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      // Only save if there's actual content
+      if (systemPrompt.trim() || userPrompt.trim() || saveTitle.trim()) {
+        const draft: DraftData = {
+          systemPrompt,
+          userPrompt,
+          variables,
+          saveTitle,
+          saveDesc,
+          currentId,
+          timestamp: Date.now()
+        };
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+      }
+    }, 1000); // Debounce 1 second
+
+    return () => clearTimeout(timer);
+  }, [systemPrompt, userPrompt, variables, saveTitle, saveDesc, currentId]);
 
   // Initialize Configs & Reload when visible
   useEffect(() => {
@@ -192,7 +274,8 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
          const contentChanged = 
             systemPrompt !== initialPrompt.systemPrompt || 
             userPrompt !== initialPrompt.userPrompt ||
-            JSON.stringify(variables) !== JSON.stringify(initialPrompt.variables);
+            JSON.stringify(variables) !== JSON.stringify(initialPrompt.variables) ||
+            JSON.stringify(images) !== JSON.stringify(initialPrompt.images || []);
             
          if (contentChanged) {
              setPendingPrompt(initialPrompt);
@@ -211,9 +294,14 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
     setSystemPrompt(prompt.systemPrompt);
     setUserPrompt(prompt.userPrompt);
     setVariables(prompt.variables);
+    // Note: images are loaded here for PR 2 (IndexedDB persistence)
+    // For PR 1, saved prompts won't have images
+    setImages(prompt.images || []);
     setCurrentId(prompt.id);
     setSaveTitle(prompt.title);
     setSaveDesc(prompt.description);
+    // Clear draft when loading a saved prompt
+    localStorage.removeItem(DRAFT_KEY);
   };
 
   // Parse Variables
@@ -242,31 +330,187 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
     });
   }, [detectedVariables]);
 
-  // Parse Output for <think> blocks (Streaming friendly)
+  // Parse Output for <think> blocks and JSON detection (Streaming friendly)
   const parsedOutput = useMemo(() => {
-    if (!output) return { thought: null, content: '' };
-    
+    if (!output) return { thought: null, content: '', isPureJson: false, jsonData: null, jsonBlocks: [] as Array<{ code: string; data: any }> };
+
+    // Step 1: Parse <think> tags first
+    let thought: string | null = null;
+    let content = output;
+
     // Strict check: Must start with <think> tag to be considered a thinking model
-    if (!output.trimStart().startsWith('<think>')) {
-       return { thought: null, content: output };
+    if (output.trimStart().startsWith('<think>')) {
+      const thinkEnd = output.indexOf('</think>');
+
+      if (thinkEnd === -1) {
+        // Thinking is ongoing or incomplete
+        thought = output.slice(7).trim();
+        content = '';
+      } else {
+        // Thinking block is closed
+        thought = output.slice(7, thinkEnd).trim();
+        content = output.slice(thinkEnd + 8).trim();
+      }
     }
-    
-    const thinkStart = 0;
-    const thinkEnd = output.indexOf('</think>');
-    
-    if (thinkEnd === -1) {
-      // Thinking is ongoing or incomplete
-      // Assume everything after <think> is thought
-      const thought = output.slice(7).trim(); // 7 is len of <think>
-      return { thought, content: '' };
+
+    // Step 2: Check if content is JSON
+    // Note: content can be intentionally empty (during streaming think), don't use || output
+    const textToCheck = content;
+    const { isJson, data } = tryParseJson(textToCheck);
+
+    if (isJson) {
+      return { thought, content: '', isPureJson: true, jsonData: data, jsonBlocks: [] };
     }
-    
-    // Thinking block is closed
-    const thought = output.slice(7, thinkEnd).trim();
-    const content = output.slice(thinkEnd + 8).trim();
-    
-    return { thought, content };
+
+    // Step 3: Check for JSON code blocks in mixed content
+    const blocks = extractJsonBlocks(textToCheck);
+
+    return {
+      thought,
+      content: textToCheck,
+      isPureJson: false,
+      jsonData: null,
+      jsonBlocks: blocks.map(b => ({ code: b.code, data: b.data }))
+    };
   }, [output]);
+
+  // Component to render mixed content with JSON blocks
+  const MixedContentWithJson: React.FC<{
+    content: string;
+    jsonBlocks: Array<{ code: string; data: any }>;
+  }> = ({ content, jsonBlocks }) => {
+    if (jsonBlocks.length === 0) {
+      return (
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{ pre: PreBlock, code: CodeBlock }}
+        >
+          {content || '...'}
+        </ReactMarkdown>
+      );
+    }
+
+    // Replace JSON code blocks with placeholders, then render
+    let parts: Array<{ type: 'text' | 'json'; content: string; data?: any }> = [];
+    let lastIndex = 0;
+
+    // Find all JSON code block positions and split content
+    const codeBlockRegex = /```(?:json)?\s*([\s\S]*?)```/g;
+    let match;
+
+    const blocks: Array<{ start: number; end: number; code: string; data: any }> = [];
+    while ((match = codeBlockRegex.exec(content)) !== null) {
+      const code = match[1].trim();
+      try {
+        const data = JSON.parse(code);
+        if (data && typeof data === 'object') {
+          blocks.push({
+            start: match.index,
+            end: match.index + match[0].length,
+            code,
+            data
+          });
+        }
+      } catch {
+        // Ignore non-JSON code blocks
+      }
+    }
+
+    // Build parts array
+    let currentPos = 0;
+    for (const block of blocks) {
+      // Text before this JSON block
+      if (block.start > currentPos) {
+        const textBefore = content.slice(currentPos, block.start);
+        if (textBefore.trim()) {
+          parts.push({ type: 'text', content: textBefore });
+        }
+      }
+      // JSON block
+      parts.push({ type: 'json', content: block.code, data: block.data });
+      currentPos = block.end;
+    }
+    // Remaining text after last JSON block
+    if (currentPos < content.length) {
+      const textAfter = content.slice(currentPos);
+      if (textAfter.trim()) {
+        parts.push({ type: 'text', content: textAfter });
+      }
+    }
+
+    // If no parts were created (edge case), render as plain markdown
+    if (parts.length === 0) {
+      return (
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{ pre: PreBlock, code: CodeBlock }}
+        >
+          {content || '...'}
+        </ReactMarkdown>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        {parts.map((part, index) => {
+          if (part.type === 'json') {
+            return <JsonBlock key={index} jsonData={part.data!} rawCode={part.content} />;
+          } else {
+            return (
+              <ReactMarkdown
+                key={index}
+                remarkPlugins={[remarkGfm]}
+                components={{ pre: PreBlock, code: CodeBlock }}
+              >
+                {part.content}
+              </ReactMarkdown>
+            );
+          }
+        })}
+      </div>
+    );
+  };
+
+  // Code component with syntax highlighting
+  const CodeBlock = ({ className, children, ...props }: any) => {
+    const codeRef = useRef<HTMLElement>(null);
+    const codeContent = typeof children === 'string' ? children : Array.isArray(children) ? children.join('') : '';
+    
+    useEffect(() => {
+      if (codeRef.current && codeContent) {
+        // Extract language from className (e.g., "language-typescript")
+        const langMatch = className?.match(/language-(\w+)/);
+        const lang = langMatch ? langMatch[1] : '';
+        
+        // Apply syntax highlighting
+        if (lang && hljs.getLanguage(lang)) {
+          try {
+            const result = hljs.highlight(codeContent, { language: lang });
+            codeRef.current.innerHTML = result.value;
+          } catch (e) {
+            codeRef.current.textContent = codeContent;
+          }
+        } else {
+          // Auto-detect or plain text
+          try {
+            const result = hljs.highlightAuto(codeContent);
+            codeRef.current.innerHTML = result.value;
+          } catch (e) {
+            codeRef.current.textContent = codeContent;
+          }
+        }
+      }
+    }, [codeContent, className]);
+
+    // Return empty code element - content will be set by highlight.js
+    return (
+      <code 
+        ref={codeRef}
+        className={`${className || ''} font-mono text-xs sm:text-sm hljs`}
+        {...props}
+      />
+    );
+  };
 
   // Custom Pre component for Code Blocks
   const PreBlock = ({ children, ...props }: any) => {
@@ -276,6 +520,7 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
     // Extract code content
     let codeContent = '';
     let isJson = false;
+    let language = '';
     
     if (React.isValidElement(children)) {
         const childProps = (children.props as any);
@@ -283,6 +528,8 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
         if (className.includes('language-json')) {
             isJson = true;
         }
+        const langMatch = className.match(/language-(\w+)/);
+        if (langMatch) language = langMatch[1];
         if (Array.isArray(childProps.children)) {
             codeContent = childProps.children.join('');
         } else {
@@ -299,22 +546,29 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
     };
     
     return (
-        <div className="relative group/pre my-4 rounded-lg overflow-hidden border border-gray-200 dark:border-white/10 bg-gray-50/50 dark:bg-[#1c1c1e]">
+        <div className="relative group/pre my-4 rounded-lg overflow-hidden border border-gray-200 dark:border-white/10 bg-[#0d1117] dark:bg-[#0d1117]">
+             {/* Language Badge */}
+             {language && (
+               <div className="absolute top-2 left-3 z-10">
+                 <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">{language}</span>
+               </div>
+             )}
+             
              {/* Sticky Toolbar */}
              <div className="sticky top-0 right-0 z-20 flex justify-end w-full h-0 overflow-visible pointer-events-none">
                  <div className="flex flex-col gap-1.5 p-2 opacity-0 group-hover/pre:opacity-100 transition-opacity duration-200 pointer-events-auto items-end">
                      <button 
                         onClick={handleCopy}
-                        className="p-1.5 bg-white dark:bg-[#2c2c2e] hover:bg-gray-100 dark:hover:bg-[#3a3a3c] text-gray-500 dark:text-gray-400 rounded-md border border-gray-200 dark:border-white/10 shadow-sm transition-all flex items-center justify-center w-7 h-7"
+                        className="p-1.5 bg-[#21262d] hover:bg-[#30363d] text-gray-300 rounded-md border border-gray-700 transition-all flex items-center justify-center w-7 h-7"
                         title="Copy code"
                      >
                         {copied ? <Icons.Check /> : <Icons.Copy />}
                      </button>
                      
-                     {isJson && (
+                     {(isJson || language) && (
                         <button 
                             onClick={() => setWrapped(!wrapped)}
-                            className="px-2 py-1 h-7 text-[10px] bg-white dark:bg-[#2c2c2e] hover:bg-gray-100 dark:hover:bg-[#3a3a3c] text-gray-600 dark:text-gray-300 rounded-md font-sans font-medium border border-gray-200 dark:border-white/10 transition-colors shadow-sm whitespace-nowrap flex items-center justify-center"
+                            className="px-2 py-1 h-7 text-[10px] bg-[#21262d] hover:bg-[#30363d] text-gray-300 rounded-md font-sans font-medium border border-gray-700 transition-colors shadow-sm whitespace-nowrap flex items-center justify-center"
                         >
                             {wrapped ? 'Scroll' : 'Wrap'}
                         </button>
@@ -324,7 +578,7 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
 
              <pre 
                 {...props} 
-                className={`${props.className || ''} ${wrapped ? '!whitespace-pre-wrap !break-all' : '!overflow-x-auto'} relative p-4 !bg-transparent !m-0 !border-0`}
+                className={`${props.className || ''} ${wrapped ? '!whitespace-pre-wrap !break-all' : '!overflow-x-auto'} relative p-4 pt-8 !bg-transparent !m-0 !border-0`}
              >
                 {children}
              </pre>
@@ -333,8 +587,8 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
   };
 
   const handleRun = async () => {
-    if (!systemPrompt.trim() && !userPrompt.trim()) {
-      showToast("Please enter a system or user prompt", "error");
+    if (!systemPrompt.trim() && !userPrompt.trim() && images.length === 0) {
+      showToast("Please enter a prompt or upload an image", "error");
       return;
     }
 
@@ -345,7 +599,7 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
 
     const [providerId, modelName] = selectedModelKey.split(':');
     const config = configs.find(c => c.id === providerId);
-    
+
     if (!config) {
       setError("No provider selected");
       setIsLoading(false);
@@ -354,27 +608,31 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
 
     const finalSystem = TokenService.resolveVariables(systemPrompt, variables);
     const finalUser = TokenService.resolveVariables(userPrompt, variables);
+
+    // Build multi-modal message content
+    const userContent = buildMessageContent(finalUser, images);
+
     const messages = [
-        { role: 'system' as const, content: finalSystem },
-        { role: 'user' as const, content: finalUser }
+        { role: 'system' as const, content: finalSystem || "You are a helpful AI assistant." },
+        { role: 'user' as const, content: userContent }
     ];
 
     try {
       // Streaming implementation
       const stream = ApiService.generateStream(config, modelName, messages);
       let fullContent = '';
-      
+
       for await (const chunk of stream) {
         if (chunk.error) {
           setError(chunk.error);
           break;
         }
-        
+
         if (chunk.content) {
           fullContent += chunk.content;
           setOutput(fullContent);
         }
-        
+
         if (chunk.usage) {
           setUsage(chunk.usage);
         }
@@ -421,7 +679,7 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
 
   const executeSave = (idToUse: string | null) => {
     const finalId = idToUse || crypto.randomUUID();
-    
+
     const newPrompt: SavedPrompt = {
       id: finalId,
       title: saveTitle,
@@ -429,6 +687,8 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
       systemPrompt,
       userPrompt,
       variables,
+      // Note: images are NOT persisted in PR 1 (in-memory only)
+      // PR 2 will add IndexedDB storage for image persistence
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
@@ -438,6 +698,8 @@ const CreateView: React.FC<DebugViewProps> = ({ initialPrompt, onClearInitial, i
     setShowSaveModal(false);
     setShowDuplicateTitleModal(false);
     setPendingSave(null);
+    // Clear draft after successful save
+    localStorage.removeItem(DRAFT_KEY);
     showToast("Prompt saved successfully", "success");
   };
   
@@ -654,6 +916,33 @@ print(response.content)
               <span className="hidden sm:inline">Export</span>
             </button>
             <div className="w-px h-6 bg-gray-200 dark:bg-white/10 mx-1"></div>
+            
+            {/* Navigation Segmented Control */}
+            <div className="flex items-center bg-gray-100 dark:bg-white/5 rounded-lg p-0.5 border border-gray-200 dark:border-white/5">
+              <button
+                onClick={() => mainContentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+                className="px-2.5 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white dark:hover:bg-white/10 rounded-md transition-all"
+                title="跳到顶部 (Top)"
+              >
+                Top
+              </button>
+              <button
+                onClick={() => outputStartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="px-2.5 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white dark:hover:bg-white/10 rounded-md transition-all"
+                title="跳到回答 (Output)"
+              >
+                Output
+              </button>
+              <button
+                onClick={() => outputEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })}
+                className="px-2.5 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white dark:hover:bg-white/10 rounded-md transition-all"
+                title="跳到底部 (Bottom)"
+              >
+                Bottom
+              </button>
+            </div>
+
+            <div className="w-px h-6 bg-gray-200 dark:bg-white/10 mx-1"></div>
             <button
               onClick={() => setIsVariablesPanelOpen(!isVariablesPanelOpen)}
               className={`p-2 rounded-lg transition-colors relative text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/5 ${isVariablesPanelOpen ? 'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-200' : ''}`}
@@ -667,7 +956,10 @@ print(response.content)
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth bg-gray-50 dark:bg-[#000000] [scrollbar-gutter:stable]">
+        <div ref={mainContentRef} className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth bg-gray-50 dark:bg-[#000000] [scrollbar-gutter:stable]">
+          {/* Image Attachments */}
+          <AttachmentPicker images={images} onImagesChange={setImages} />
+
           {/* System Prompt */}
           <div className="group">
             <div className="flex justify-between items-end mb-2">
@@ -720,36 +1012,15 @@ print(response.content)
                <Icons.Copy />
                <span className="hidden sm:inline">Copy Full Prompt</span>
              </button>
-
-             <div className="flex items-center gap-4">
-               <span className="text-xs text-gray-400 dark:text-gray-500 hidden sm:inline-block">
-                 Press Ctrl + Enter to run
-               </span>
-               <button
-                onClick={handleRun}
-                disabled={isLoading}
-                className={`px-8 py-3 rounded-xl font-semibold text-sm transition-all shadow-lg active:scale-95 flex items-center gap-2 ${
-                  isLoading 
-                  ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed' 
-                  : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/20'
-                }`}
-               >
-                 {isLoading ? (
-                   <span className="flex items-center gap-2">
-                     <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                     Generating...
-                   </span>
-                 ) : (
-                   <><Icons.Play /> Run Prompt</>
-                 )}
-               </button>
-             </div>
           </div>
 
           {/* Output Area */}
           <div className="pt-2 pb-12 md:pb-2">
              {(output || error) && (
                <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+                 {/* Output Area Start Marker */}
+                 <div ref={outputStartRef} className="scroll-mt-4" />
+                 
                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3 px-1 gap-2">
                     <div className="flex items-center gap-3">
                       <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Model Response</label>
@@ -815,7 +1086,7 @@ print(response.content)
                           <div className="prose prose-sm max-w-none dark:prose-invert">
                             {/* Thinking Block */}
                             {parsedOutput.thought && (
-                              <details open className="mb-6 bg-gray-50 dark:bg-[#1c1c1e] border border-gray-100 dark:border-white/5 rounded-lg overflow-hidden group/think">
+                              <details className="mb-6 bg-gray-50 dark:bg-[#1c1c1e] border border-gray-100 dark:border-white/5 rounded-lg overflow-hidden group/think">
                                 <summary className="px-4 py-2.5 cursor-pointer flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors bg-gray-50/50 dark:bg-white/[0.02]">
                                   <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></span>
                                   Reasoning Process
@@ -828,18 +1099,29 @@ print(response.content)
                                 </div>
                               </details>
                             )}
-                            
-                            {/* Final Answer */}
-                            <div className="font-sans text-sm text-gray-800 dark:text-gray-200 leading-7">
-                               <ReactMarkdown 
-                                 remarkPlugins={[remarkGfm]}
-                                 components={{
-                                   pre: PreBlock
-                                 }}
-                               >
-                                 {parsedOutput.content || '...'}
-                               </ReactMarkdown>
-                            </div>
+
+                            {/* Pure JSON Output */}
+                            {parsedOutput.isPureJson && parsedOutput.jsonData ? (
+                              <JsonBlock jsonData={parsedOutput.jsonData} rawCode={JSON.stringify(parsedOutput.jsonData, null, 2)} />
+                            ) : (
+                              /* Final Answer / Mixed Content */
+                              <div className="font-sans text-sm text-gray-800 dark:text-gray-200 leading-7">
+                                {/* Render JSON blocks within content */}
+                                {parsedOutput.jsonBlocks.length > 0 ? (
+                                  <MixedContentWithJson content={parsedOutput.content} jsonBlocks={parsedOutput.jsonBlocks} />
+                                ) : (
+                                  <ReactMarkdown
+                                    remarkPlugins={[remarkGfm]}
+                                    components={{
+                                      pre: PreBlock,
+                                      code: CodeBlock
+                                    }}
+                                  >
+                                    {parsedOutput.content || '...'}
+                                  </ReactMarkdown>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -865,12 +1147,32 @@ print(response.content)
       >
         <div className="h-16 flex items-center justify-between px-6 border-b border-gray-200 dark:border-white/5 bg-white dark:bg-[#121212] md:min-w-[20rem]">
           <h3 className="font-semibold text-gray-900 dark:text-gray-200 text-sm">Variables</h3>
-          <button 
-            onClick={() => setIsVariablesPanelOpen(false)}
-            className="md:hidden p-2 text-gray-500"
-          >
-            <Icons.PanelRightClose />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRun}
+              disabled={isLoading}
+              className={`px-4 py-2 rounded-lg font-medium text-xs transition-all active:scale-95 flex items-center gap-1.5 ${
+                isLoading
+                ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/20'
+              }`}
+            >
+              {isLoading ? (
+                <span className="flex items-center gap-1.5">
+                  <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                  生成中...
+                </span>
+              ) : (
+                <><Icons.Play /> 生成</>
+              )}
+            </button>
+            <button
+              onClick={() => setIsVariablesPanelOpen(false)}
+              className="md:hidden p-2 text-gray-500"
+            >
+              <Icons.PanelRightClose />
+            </button>
+          </div>
         </div>
         
         <div className="flex-1 overflow-y-auto p-6 space-y-6 md:min-w-[20rem]">
